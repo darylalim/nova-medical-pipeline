@@ -1,5 +1,3 @@
-from unittest.mock import MagicMock
-
 import pytest
 
 import main
@@ -7,15 +5,11 @@ import main
 FAKE_AUDIO = b"fake-audio-data"
 
 
-class TestMainTranscribesAudio:
-    def test_calls_transcribe_with_correct_args(
-        self, mock_deepgram_cls, env_with_api_key, monkeypatch
+class TestTranscribe:
+    def test_calls_deepgram_with_correct_args(
+        self, mock_deepgram_cls, env_with_api_key
     ):
-        monkeypatch.setattr(
-            main, "AUDIO_FILE", MagicMock(read_bytes=MagicMock(return_value=FAKE_AUDIO))
-        )
-
-        main.main()
+        main.transcribe(FAKE_AUDIO)
 
         mock_deepgram_cls.assert_called_once_with(api_key="test-key")
         mock_client = mock_deepgram_cls.return_value
@@ -25,26 +19,15 @@ class TestMainTranscribesAudio:
             smart_format=True,
         )
 
-    def test_prints_json_response(self, mock_deepgram_cls, env_with_api_key, capsys):
-        main.main()
+    def test_returns_response_object(self, mock_deepgram_cls, env_with_api_key):
+        response = main.transcribe(FAKE_AUDIO)
 
-        captured = capsys.readouterr()
-        assert captured.out.strip() == '{"results": "transcribed"}'
+        assert response.results.channels[0].alternatives[0].transcript == "Life moves pretty fast."
+        assert response.results.channels[0].alternatives[0].confidence == 0.98
+        assert response.metadata.duration == 3.5
 
-
-class TestMainMissingApiKey:
-    def test_raises_key_error(self, mock_deepgram_cls, monkeypatch):
+    def test_missing_api_key_raises_key_error(self, mock_deepgram_cls, monkeypatch):
         monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
 
         with pytest.raises(KeyError, match="DEEPGRAM_API_KEY"):
-            main.main()
-
-
-class TestMainMissingAudioFile:
-    def test_raises_file_not_found_error(
-        self, mock_deepgram_cls, env_with_api_key, monkeypatch, tmp_path
-    ):
-        monkeypatch.setattr(main, "AUDIO_FILE", tmp_path / "nonexistent.wav")
-
-        with pytest.raises(FileNotFoundError):
-            main.main()
+            main.transcribe(FAKE_AUDIO)
