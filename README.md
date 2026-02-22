@@ -18,6 +18,14 @@ uv run streamlit run streamlit_app.py
 
 Transcriptions use smart formatting, numerals conversion, and profanity filtering. Each result displays confidence, duration, word count, and detected language, along with the full transcript and a JSON download.
 
+## Sample Audio
+
+Medical dictation practice files from [NCH Software](https://www.nch.com.au/scribe/practice.html):
+
+- [Chris Smith Medical Report](https://www.nch.com.au/scribe/practice/audio-sample-4.mp3)
+- [Janet Jones Medical Report](https://www.nch.com.au/scribe/practice/audio-sample-5.mp3)
+- [John Finton Medical Report](https://www.nch.com.au/scribe/practice/audio-sample-6.mp3)
+
 ## Testing
 
 ```bash
