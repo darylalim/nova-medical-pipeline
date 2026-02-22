@@ -12,16 +12,34 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
 
+_TRANSCRIBE_OPTS = dict(
+    model="nova-3-medical",
+    smart_format=True,
+    numerals=True,
+    profanity_filter=True,
+)
 
-def transcribe(audio_bytes: bytes):
-    client = DeepgramClient(api_key=os.environ["DEEPGRAM_API_KEY"])
-    return client.listen.v1.media.transcribe_file(
-        request=audio_bytes,
-        model="nova-3-medical",
-        smart_format=True,
-        numerals=True,
-        profanity_filter=True,
-    )
+
+def _process_inputs(files: list[tuple[str, bytes]]):
+    """Transcribe files with a shared client and store results in session state."""
+    try:
+        api_key = os.environ["DEEPGRAM_API_KEY"]
+    except KeyError:
+        st.error("Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root.")
+        return
+    client = DeepgramClient(api_key=api_key)
+    responses = []
+    for name, data in files:
+        try:
+            with st.spinner(f"Transcribing {name}..."):
+                resp = client.listen.v1.media.transcribe_file(
+                    request=data, **_TRANSCRIBE_OPTS
+                )
+                responses.append((name, resp))
+        except Exception as e:
+            st.error(f"Transcription failed for {name}: {e}")
+    if responses:
+        st.session_state["responses"] = responses
 
 
 st.title("Medical Dictation Transcriber")
@@ -30,74 +48,60 @@ tab_upload, tab_record = st.tabs(["Upload File", "Record Audio"])
 
 with tab_upload:
     uploaded_files = st.file_uploader(
-        "Upload audio files", type=["wav", "mp3", "m4a", "flac", "ogg"], accept_multiple_files=True
+        "Upload audio files",
+        type=["wav", "mp3", "m4a", "flac", "ogg"],
+        accept_multiple_files=True,
     )
     if st.button("Transcribe", disabled=not uploaded_files, key="transcribe_upload"):
         if len(uploaded_files) > MAX_UPLOADS:
             st.error(f"Too many files. Maximum is {MAX_UPLOADS} per batch.")
         else:
-            responses = []
-            oversized = []
-            for f in uploaded_files:
-                if f.size > MAX_FILE_SIZE:
-                    oversized.append(f.name)
-                    continue
-                try:
-                    with st.spinner(f"Transcribing {f.name}..."):
-                        responses.append((f.name, transcribe(f.getvalue())))
-                except KeyError:
-                    st.error(
-                        "Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root."
-                    )
-                    break
-                except Exception as e:
-                    st.error(f"Transcription failed for {f.name}: {e}")
+            oversized = [f.name for f in uploaded_files if f.size > MAX_FILE_SIZE]
             if oversized:
                 st.error(f"Skipped (exceeds 2 GB): {', '.join(oversized)}")
-            if responses:
-                st.session_state["responses"] = responses
+            valid = [
+                (f.name, f.getvalue())
+                for f in uploaded_files
+                if f.size <= MAX_FILE_SIZE
+            ]
+            if valid:
+                _process_inputs(valid)
 
 with tab_record:
     recording = st.audio_input("Record a dictation")
-    if st.button("Transcribe", disabled=recording is None, key="transcribe_record"):
+    if (
+        st.button("Transcribe", disabled=recording is None, key="transcribe_record")
+        and recording is not None
+    ):
         audio_bytes = recording.getvalue()
         with wave.open(io.BytesIO(audio_bytes)) as wf:
             duration = wf.getnframes() / wf.getframerate()
         if duration > MAX_RECORDING_SECONDS:
             st.error("Recording exceeds the 10-minute limit.")
         else:
-            try:
-                with st.spinner("Transcribing..."):
-                    response = transcribe(audio_bytes)
-                st.session_state["responses"] = [("Recording", response)]
-            except KeyError:
-                st.error(
-                    "Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root."
-                )
-            except Exception as e:
-                st.error(f"Transcription failed: {e}")
+            _process_inputs([("Recording", audio_bytes)])
 
-if "responses" in st.session_state:
-    for name, response in st.session_state["responses"]:
-        json_str = response.model_dump_json(indent=4)
-        result = response.results.channels[0].alternatives[0]
+for name, response in st.session_state.get("responses", []):
+    channel = response.results.channels[0]
+    alt = channel.alternatives[0]
 
-        st.subheader(name)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Confidence", f"{result.confidence:.1%}")
-        col2.metric("Duration", f"{response.metadata.duration:.1f}s")
-        col3.metric("Words", len(result.words))
-        col4.metric("Language", response.results.channels[0].detected_language or "N/A")
-
-        st.text_area(
-            name, value=result.transcript, height=300, disabled=True, label_visibility="collapsed"
-        )
-
-        st.download_button(
-            "Download JSON",
-            data=json_str,
-            file_name=f"{name}.json",
-            mime="application/json",
-            key=f"download_{name}",
-        )
+    st.subheader(name)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Confidence", f"{alt.confidence:.1%}")
+    col2.metric("Duration", f"{response.metadata.duration:.1f}s")
+    col3.metric("Words", len(alt.words))
+    col4.metric("Language", channel.detected_language or "N/A")
+    st.text_area(
+        name,
+        value=alt.transcript,
+        height=300,
+        disabled=True,
+        label_visibility="collapsed",
+    )
+    st.download_button(
+        "Download JSON",
+        data=response.model_dump_json(indent=4),
+        file_name=f"{name}.json",
+        mime="application/json",
+        key=f"download_{name}",
+    )

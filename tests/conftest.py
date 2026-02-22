@@ -30,3 +30,11 @@ def mock_deepgram_cls():
 @pytest.fixture
 def env_with_api_key(monkeypatch):
     monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
+
+
+@pytest.fixture
+def mock_st():
+    session_state = {}
+    with patch("streamlit_app.st") as mock:
+        mock.session_state = session_state
+        yield mock
