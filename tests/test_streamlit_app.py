@@ -98,3 +98,16 @@ class TestProcessInputs:
         mock_st.error.assert_called_once_with(
             "Transcription failed for bad.wav: timeout"
         )
+
+
+class TestProcessUrls:
+    def test_creates_single_client_for_batch(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        streamlit_app._process_urls(
+            ["https://example.com/a.wav", "https://example.com/b.wav"]
+        )
+
+        mock_deepgram_cls.assert_called_once_with(api_key="test-key")
+        mock_client = mock_deepgram_cls.return_value
+        assert mock_client.listen.v1.media.transcribe_url.call_count == 2

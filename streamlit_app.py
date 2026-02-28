@@ -42,6 +42,28 @@ def _process_inputs(files: list[tuple[str, bytes]]):
         st.session_state["responses"] = responses
 
 
+def _process_urls(urls: list[str]):
+    """Transcribe remote audio URLs with a shared client and store results in session state."""
+    try:
+        api_key = os.environ["DEEPGRAM_API_KEY"]
+    except KeyError:
+        st.error("Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root.")
+        return
+    client = DeepgramClient(api_key=api_key)
+    responses = []
+    for url in urls:
+        try:
+            with st.spinner(f"Transcribing {url}..."):
+                resp = client.listen.v1.media.transcribe_url(
+                    url=url, **_TRANSCRIBE_OPTS
+                )
+                responses.append((url, resp))
+        except Exception as e:
+            st.error(f"Transcription failed for {url}: {e}")
+    if responses:
+        st.session_state["responses"] = responses
+
+
 st.title("Medical Dictation Transcriber")
 
 tab_upload, tab_record = st.tabs(["Upload File", "Record Audio"])
