@@ -20,8 +20,8 @@ _TRANSCRIBE_OPTS = dict(
 )
 
 
-def _process_inputs(files: list[tuple[str, bytes]]):
-    """Transcribe files with a shared client and store results in session state."""
+def _transcribe_batch(items: list[tuple[str, dict[str, object]]], method: str):
+    """Transcribe a batch of audio sources and store results in session state."""
     try:
         api_key = os.environ["DEEPGRAM_API_KEY"]
     except KeyError:
@@ -29,39 +29,28 @@ def _process_inputs(files: list[tuple[str, bytes]]):
         return
     client = DeepgramClient(api_key=api_key)
     responses = []
-    for name, data in files:
+    for label, kwargs in items:
         try:
-            with st.spinner(f"Transcribing {name}..."):
-                resp = client.listen.v1.media.transcribe_file(
-                    request=data, **_TRANSCRIBE_OPTS
-                )
-                responses.append((name, resp))
+            with st.spinner(f"Transcribing {label}..."):
+                transcribe = getattr(client.listen.v1.media, method)
+                resp = transcribe(**kwargs, **_TRANSCRIBE_OPTS)
+                responses.append((label, resp))
         except Exception as e:
-            st.error(f"Transcription failed for {name}: {e}")
+            st.error(f"Transcription failed for {label}: {e}")
     if responses:
         st.session_state["responses"] = responses
+
+
+def _process_inputs(files: list[tuple[str, bytes]]):
+    """Transcribe files with a shared client and store results in session state."""
+    items = [(name, {"request": data}) for name, data in files]
+    _transcribe_batch(items, "transcribe_file")
 
 
 def _process_urls(urls: list[str]):
     """Transcribe remote audio URLs with a shared client and store results in session state."""
-    try:
-        api_key = os.environ["DEEPGRAM_API_KEY"]
-    except KeyError:
-        st.error("Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root.")
-        return
-    client = DeepgramClient(api_key=api_key)
-    responses = []
-    for url in urls:
-        try:
-            with st.spinner(f"Transcribing {url}..."):
-                resp = client.listen.v1.media.transcribe_url(
-                    url=url, **_TRANSCRIBE_OPTS
-                )
-                responses.append((url, resp))
-        except Exception as e:
-            st.error(f"Transcription failed for {url}: {e}")
-    if responses:
-        st.session_state["responses"] = responses
+    items = [(url, {"url": url}) for url in urls]
+    _transcribe_batch(items, "transcribe_url")
 
 
 st.title("Medical Dictation Transcriber")
