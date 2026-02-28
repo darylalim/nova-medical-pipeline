@@ -111,3 +111,36 @@ class TestProcessUrls:
         mock_deepgram_cls.assert_called_once_with(api_key="test-key")
         mock_client = mock_deepgram_cls.return_value
         assert mock_client.listen.v1.media.transcribe_url.call_count == 2
+
+    def test_passes_correct_transcribe_options(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        streamlit_app._process_urls(["https://example.com/test.wav"])
+
+        mock_client = mock_deepgram_cls.return_value
+        mock_client.listen.v1.media.transcribe_url.assert_called_once_with(
+            url="https://example.com/test.wav",
+            model="nova-3-medical",
+            smart_format=True,
+            numerals=True,
+            profanity_filter=True,
+        )
+
+    def test_stores_responses_in_session_state(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        streamlit_app._process_urls(["https://example.com/test.wav"])
+
+        responses = mock_st.session_state["responses"]
+        assert len(responses) == 1
+        assert responses[0][0] == "https://example.com/test.wav"
+
+    def test_missing_api_key_shows_error(self, mock_deepgram_cls, monkeypatch, mock_st):
+        monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+
+        streamlit_app._process_urls(["https://example.com/test.wav"])
+
+        mock_st.error.assert_called_once_with(
+            "Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root."
+        )
+        assert "responses" not in mock_st.session_state
