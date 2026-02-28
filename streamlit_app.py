@@ -66,7 +66,7 @@ def _process_urls(urls: list[str]):
 
 st.title("Medical Dictation Transcriber")
 
-tab_upload, tab_record = st.tabs(["Upload File", "Record Audio"])
+tab_upload, tab_record, tab_url = st.tabs(["Upload File", "Record Audio", "Remote URL"])
 
 with tab_upload:
     uploaded_files = st.file_uploader(
@@ -102,6 +102,22 @@ with tab_record:
             st.error("Recording exceeds the 10-minute limit.")
         else:
             _process_inputs([("Recording", audio_bytes)])
+
+with tab_url:
+    url_text = st.text_area(
+        "Enter audio file URLs (one per line)",
+        placeholder="https://example.com/audio.wav",
+    )
+    if st.button("Transcribe", disabled=not url_text.strip(), key="transcribe_url"):
+        raw_urls = [line.strip() for line in url_text.splitlines()]
+        urls = [u for u in raw_urls if u]
+        invalid = [u for u in urls if not u.startswith(("http://", "https://"))]
+        if invalid:
+            st.error(f"Invalid URL(s): {', '.join(invalid)}")
+        elif len(urls) > MAX_UPLOADS:
+            st.error(f"Too many URLs. Maximum is {MAX_UPLOADS} per batch.")
+        else:
+            _process_urls(urls)
 
 for name, response in st.session_state.get("responses", []):
     channel = response.results.channels[0]
