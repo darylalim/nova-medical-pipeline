@@ -144,3 +144,68 @@ class TestProcessUrls:
             "Missing DEEPGRAM_API_KEY. Set it in a .env file at the project root."
         )
         assert "responses" not in mock_st.session_state
+
+    def test_continues_after_single_url_failure(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        mock_client = mock_deepgram_cls.return_value
+        good_response = MagicMock()
+        mock_client.listen.v1.media.transcribe_url.side_effect = [
+            Exception("API error"),
+            good_response,
+        ]
+
+        streamlit_app._process_urls(
+            ["https://example.com/bad.wav", "https://example.com/good.wav"]
+        )
+
+        mock_st.error.assert_called_once_with(
+            "Transcription failed for https://example.com/bad.wav: API error"
+        )
+        responses = mock_st.session_state["responses"]
+        assert len(responses) == 1
+        assert responses[0] == ("https://example.com/good.wav", good_response)
+
+    def test_all_urls_failing_does_not_set_session_state(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        mock_client = mock_deepgram_cls.return_value
+        mock_client.listen.v1.media.transcribe_url.side_effect = Exception("fail")
+
+        streamlit_app._process_urls(
+            ["https://example.com/a.wav", "https://example.com/b.wav"]
+        )
+
+        assert mock_st.error.call_count == 2
+        assert "responses" not in mock_st.session_state
+
+    def test_stores_all_successful_responses(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        streamlit_app._process_urls(
+            [
+                "https://example.com/a.wav",
+                "https://example.com/b.wav",
+                "https://example.com/c.wav",
+            ]
+        )
+
+        responses = mock_st.session_state["responses"]
+        assert len(responses) == 3
+        assert [name for name, _ in responses] == [
+            "https://example.com/a.wav",
+            "https://example.com/b.wav",
+            "https://example.com/c.wav",
+        ]
+
+    def test_error_message_includes_url_and_exception(
+        self, mock_deepgram_cls, env_with_api_key, mock_st
+    ):
+        mock_client = mock_deepgram_cls.return_value
+        mock_client.listen.v1.media.transcribe_url.side_effect = Exception("timeout")
+
+        streamlit_app._process_urls(["https://example.com/bad.wav"])
+
+        mock_st.error.assert_called_once_with(
+            "Transcription failed for https://example.com/bad.wav: timeout"
+        )
