@@ -24,6 +24,9 @@ def mock_deepgram_cls():
         mock_cls.return_value.listen.v1.media.transcribe_file.return_value = (
             mock_response
         )
+        mock_cls.return_value.listen.v1.media.transcribe_url.return_value = (
+            mock_response
+        )
         yield mock_cls
 
 
