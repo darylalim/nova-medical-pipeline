@@ -66,7 +66,7 @@ def _parse_urls(text: str) -> tuple[list[str], list[str]]:
 
 st.title("Medical Dictation Transcriber")
 
-tab_upload, tab_record, tab_url = st.tabs(["Upload File", "Record Audio", "Remote URL"])
+tab_record, tab_url, tab_upload = st.tabs(["Record Audio", "Remote URL", "Upload File"])
 
 with tab_upload:
     uploaded_files = st.file_uploader(
