@@ -12,6 +12,8 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
 
+_AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".flac", ".ogg")
+
 _TRANSCRIBE_OPTS = dict(
     model="nova-3-medical",
     smart_format=True,
@@ -113,6 +115,15 @@ with tab_url:
         elif len(valid) > MAX_UPLOADS:
             st.error(f"Too many URLs. Maximum is {MAX_UPLOADS} per batch.")
         else:
+            no_ext = [
+                u
+                for u in valid
+                if not u.split("?")[0].lower().endswith(_AUDIO_EXTENSIONS)
+            ]
+            if no_ext:
+                st.warning(
+                    f"Unrecognized audio extension (supported: wav, mp3, m4a, flac, ogg): {', '.join(no_ext)}"
+                )
             _process_urls(valid)
 
 for name, response in st.session_state.get("responses", []):
