@@ -22,7 +22,9 @@ def _write_silence(filename: str, *, duration_s: float, channels: int = 1) -> No
         wf.setsampwidth(sample_width)
         wf.setframerate(sample_rate)
         # Write all-zero samples (silence)
-        wf.writeframes(struct.pack(f"<{num_frames * channels}h", *([0] * num_frames * channels)))
+        wf.writeframes(
+            struct.pack(f"<{num_frames * channels}h", *([0] * num_frames * channels))
+        )
 
     print(f"Created {path} ({path.stat().st_size:,} bytes)")
 
