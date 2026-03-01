@@ -5,6 +5,41 @@ import streamlit_app
 FAKE_AUDIO = b"fake-audio-data"
 
 
+class TestParseUrls:
+    def test_empty_text_returns_no_urls(self):
+        valid, invalid = streamlit_app._parse_urls("")
+        assert valid == []
+        assert invalid == []
+
+    def test_blank_lines_are_skipped(self):
+        valid, invalid = streamlit_app._parse_urls("  \n\n  \n")
+        assert valid == []
+        assert invalid == []
+
+    def test_valid_http_url(self):
+        valid, invalid = streamlit_app._parse_urls("http://example.com/audio.wav")
+        assert valid == ["http://example.com/audio.wav"]
+        assert invalid == []
+
+    def test_valid_https_url(self):
+        valid, invalid = streamlit_app._parse_urls("https://example.com/audio.wav")
+        assert valid == ["https://example.com/audio.wav"]
+        assert invalid == []
+
+    def test_invalid_protocol_rejected(self):
+        valid, invalid = streamlit_app._parse_urls("ftp://example.com/audio.wav")
+        assert valid == []
+        assert invalid == ["ftp://example.com/audio.wav"]
+
+    def test_mixed_valid_and_invalid(self):
+        text = (
+            "https://example.com/a.wav\nftp://bad.com/b.wav\nhttp://example.com/c.mp3"
+        )
+        valid, invalid = streamlit_app._parse_urls(text)
+        assert valid == ["https://example.com/a.wav", "http://example.com/c.mp3"]
+        assert invalid == ["ftp://bad.com/b.wav"]
+
+
 class TestProcessInputs:
     def test_creates_single_client_for_batch(
         self, mock_deepgram_cls, env_with_api_key, mock_st

@@ -53,6 +53,15 @@ def _process_urls(urls: list[str]):
     _transcribe_batch(items, "transcribe_url")
 
 
+def _parse_urls(text: str) -> tuple[list[str], list[str]]:
+    """Parse newline-separated text into (valid_urls, invalid_urls)."""
+    raw = [line.strip() for line in text.splitlines()]
+    urls = [u for u in raw if u]
+    valid = [u for u in urls if u.startswith(("http://", "https://"))]
+    invalid = [u for u in urls if not u.startswith(("http://", "https://"))]
+    return valid, invalid
+
+
 st.title("Medical Dictation Transcriber")
 
 tab_upload, tab_record, tab_url = st.tabs(["Upload File", "Record Audio", "Remote URL"])
@@ -98,15 +107,13 @@ with tab_url:
         placeholder="https://example.com/audio.wav",
     )
     if st.button("Transcribe", disabled=not url_text.strip(), key="transcribe_url"):
-        raw_urls = [line.strip() for line in url_text.splitlines()]
-        urls = [u for u in raw_urls if u]
-        invalid = [u for u in urls if not u.startswith(("http://", "https://"))]
+        valid, invalid = _parse_urls(url_text)
         if invalid:
             st.error(f"Invalid URL(s): {', '.join(invalid)}")
-        elif len(urls) > MAX_UPLOADS:
+        elif len(valid) > MAX_UPLOADS:
             st.error(f"Too many URLs. Maximum is {MAX_UPLOADS} per batch.")
         else:
-            _process_urls(urls)
+            _process_urls(valid)
 
 for name, response in st.session_state.get("responses", []):
     channel = response.results.channels[0]
