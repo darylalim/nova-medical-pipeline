@@ -19,7 +19,7 @@ Enter your Deepgram API key in the sidebar. If a `.env` file is present, the key
 - **Remote URL** — transcribe from HTTP/HTTPS URLs (up to 100 per batch)
 - **Upload File** — up to 100 audio files (wav, mp3, m4a, flac, ogg; max 2 GB each)
 
-Transcriptions use smart formatting, numerals conversion, and profanity filtering. Each result displays confidence, duration, word count, and detected language, along with the full transcript and a JSON download.
+Transcriptions use smart formatting, numerals conversion, and profanity filtering. Each result displays confidence, duration, word count, and detected language, along with the full transcript. Download results as plain text or JSON.
 
 ## Sample Audio
 
