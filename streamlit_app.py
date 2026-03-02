@@ -140,7 +140,9 @@ with tab_url:
                 )
             _process_urls(api_key, valid)
 
-for name, response in st.session_state.get("responses", []):
+
+def _display_response(name: str, response: object) -> None:
+    """Display transcription results with metrics and download buttons."""
     channel = response.results.channels[0]
     alt = channel.alternatives[0]
 
@@ -151,10 +153,22 @@ for name, response in st.session_state.get("responses", []):
     col3.metric("Words", len(alt.words))
     col4.metric("Language", channel.detected_language or "N/A")
     st.code(alt.transcript, language=None, wrap_lines=True)
-    st.download_button(
+    dl_txt, dl_json = st.columns(2)
+    dl_txt.download_button(
+        "Download Transcript",
+        data=alt.transcript,
+        file_name=f"{name}.txt",
+        mime="text/plain",
+        key=f"download_txt_{name}",
+    )
+    dl_json.download_button(
         "Download JSON",
         data=response.model_dump_json(indent=4),
         file_name=f"{name}.json",
         mime="application/json",
-        key=f"download_{name}",
+        key=f"download_json_{name}",
     )
+
+
+for name, response in st.session_state.get("responses", []):
+    _display_response(name, response)
