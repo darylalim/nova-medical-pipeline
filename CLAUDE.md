@@ -19,15 +19,15 @@ uv run pytest                         # Test
 
 Single-file Streamlit app (`streamlit_app.py`):
 
-1. Loads `DEEPGRAM_API_KEY` from sidebar input (falls back to `.env` via python-dotenv)
+1. Loads `DEEPGRAM_API_KEY` from `.env` via python-dotenv; prompts inline if missing
 2. `_TRANSCRIBE_OPTS` — shared dict of Deepgram API options (model, smart format, numerals, profanity filter)
 3. `_transcribe_batch(api_key, items, method)` — creates one shared `DeepgramClient` for a batch, transcribes each item, handles errors via `st.error`, stores results in `st.session_state["responses"]`
 4. `_process_inputs(api_key, files)` — wraps `_transcribe_batch` for file uploads
 5. `_process_urls(api_key, urls)` — wraps `_transcribe_batch` for remote audio URLs
 6. UI with three input tabs:
-   - **Record Audio** — microphone via `st.audio_input`, max 10 minutes
-   - **Remote URL** — transcribe from HTTP/HTTPS URLs, up to 100 URLs per batch
-   - **Upload File** — up to 100 files, max 2 GB each (wav, mp3, m4a, flac, ogg)
+   - **Record** — microphone via `st.audio_input`, max 10 minutes
+   - **URL** — transcribe from HTTP/HTTPS URLs, up to 100 URLs per batch
+   - **Upload** — up to 100 files, max 2 GB each (mp3, m4a, wav, flac, ogg)
 7. `_display_response(name, response)` — displays per-file metrics (confidence, duration, word count, language), transcript, and download buttons (text and JSON)
 
 ## Testing
