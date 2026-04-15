@@ -1,4 +1,4 @@
-# Medical Dictation
+# Nova Medical Pipeline
 
 Streamlit web app that transcribes medical dictation using Deepgram's Nova-3 Medical model.
 

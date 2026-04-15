@@ -1,5 +1,5 @@
 [project]
-name = "medical-dictation"
+name = "nova-medical-pipeline"
 version = "0.1.0"
 description = "Streamlit web app that transcribes medical dictation using Deepgram's Nova-3 Medical model"
 requires-python = ">=3.12"

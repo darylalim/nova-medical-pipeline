@@ -61,7 +61,7 @@ def _parse_urls(text: str) -> tuple[list[str], list[str]]:
     return valid, invalid
 
 
-st.title("Medical Dictation Transcriber")
+st.title("Nova Medical Pipeline")
 
 api_key = st.sidebar.text_input(
     "Deepgram API Key",
