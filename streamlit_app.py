@@ -1,6 +1,7 @@
 import io
 import os
 import wave
+from typing import Any
 
 import streamlit as st
 from deepgram import DeepgramClient
@@ -146,7 +147,7 @@ with tab_url:
             _process_urls(api_key, valid)
 
 
-def _display_response(name: str, response: object) -> None:
+def _display_response(name: str, response: Any) -> None:
     """Display transcription results with metrics and download buttons."""
     channel = response.results.channels[0]
     alt = channel.alternatives[0]
