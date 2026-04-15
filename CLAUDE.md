@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Streamlit web app that transcribes medical dictation audio using Deepgram's Nova-3 Medical model.
+Streamlit web app that transcribes medical dictation using Deepgram's Nova-3 Medical model.
 
 ## Commands
 
@@ -34,16 +34,12 @@ Single-file Streamlit app (`streamlit_app.py`):
 
 Tests mock `DeepgramClient` — no real API calls.
 
+- `conftest.py` (root) — adds repo root to `sys.path` so tests can `import streamlit_app`
 - `tests/conftest.py` — shared fixtures (`mock_deepgram_cls`, `mock_st`)
-- `tests/test_streamlit_app.py` — tests for `_process_inputs()`, `_process_urls()`, and `_display_response()`:
-  - Client reuse across a batch
-  - Transcribe options passed correctly
-  - Session state storage
-  - Partial and total batch failure
-  - Multi-file/URL success ordering
-  - Error message format (filename/URL + exception)
-  - Transcript text and JSON download buttons
-  - Metrics and transcript display
+- `tests/test_streamlit_app.py`:
+  - `_parse_urls()` — valid/invalid protocols, blank lines, mixed input
+  - `_process_inputs()` / `_process_urls()` — client reuse, option passing, session state, partial/total failure, error format, multi-item ordering
+  - `_display_response()` — metrics, transcript rendering, text and JSON downloads
 
 ## Dependencies
 

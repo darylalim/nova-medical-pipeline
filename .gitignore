@@ -1,8 +1,15 @@
+# Env
 .env
 .venv/
+
+# Caches
 __pycache__/
 .pytest_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+
+# OS
 .DS_Store
-tests/data/audio/*.mp3
+
+# Local only
+docs/
