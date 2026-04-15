@@ -13,6 +13,7 @@ MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
 
 _AUDIO_EXTENSIONS = (".mp3", ".m4a", ".wav", ".flac", ".ogg")
+_AUDIO_TYPES = [ext.lstrip(".") for ext in _AUDIO_EXTENSIONS]
 
 _TRANSCRIBE_OPTS = dict(
     model="nova-3-medical",
@@ -77,7 +78,7 @@ tab_record, tab_url, tab_upload = st.tabs(["Record", "URL", "Upload"])
 with tab_upload:
     uploaded_files = st.file_uploader(
         "Upload audio files",
-        type=["mp3", "m4a", "wav", "flac", "ogg"],
+        type=_AUDIO_TYPES,
         accept_multiple_files=True,
         label_visibility="collapsed",
     )
@@ -140,7 +141,7 @@ with tab_url:
             ]
             if no_ext:
                 st.warning(
-                    f"Unrecognized audio extension (supported: wav, mp3, m4a, flac, ogg): {', '.join(no_ext)}"
+                    f"Unrecognized audio extension (supported: {', '.join(_AUDIO_TYPES)}): {', '.join(no_ext)}"
                 )
             _process_urls(api_key, valid)
 
