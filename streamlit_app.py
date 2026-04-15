@@ -63,12 +63,14 @@ def _parse_urls(text: str) -> tuple[list[str], list[str]]:
 
 st.title("Nova Medical Pipeline")
 
-api_key = st.sidebar.text_input(
-    "Deepgram API Key",
-    type="password",
-    value=os.environ.get("DEEPGRAM_API_KEY", ""),
-    help="Get a free API key at https://deepgram.com",
-)
+api_key = os.environ.get("DEEPGRAM_API_KEY", "")
+if not api_key:
+    st.warning("Deepgram API key required. Get a free key at https://deepgram.com.")
+    api_key = st.text_input(
+        "Deepgram API Key",
+        type="password",
+        label_visibility="collapsed",
+    )
 
 tab_record, tab_url, tab_upload = st.tabs(["Record", "URL", "Upload"])
 
