@@ -77,6 +77,7 @@ with tab_upload:
         "Upload audio files",
         type=["mp3", "m4a", "wav", "flac", "ogg"],
         accept_multiple_files=True,
+        label_visibility="collapsed",
     )
     if st.button(
         "Transcribe",
@@ -98,7 +99,7 @@ with tab_upload:
                 _process_inputs(api_key, valid)
 
 with tab_record:
-    recording = st.audio_input("Record a dictation")
+    recording = st.audio_input("Record a dictation", label_visibility="collapsed")
     if (
         st.button(
             "Transcribe",
@@ -119,6 +120,7 @@ with tab_url:
     url_text = st.text_area(
         "Enter audio file URLs (one per line)",
         placeholder="https://example.com/audio.wav",
+        label_visibility="collapsed",
     )
     if st.button(
         "Transcribe", disabled=not url_text.strip() or not api_key, key="transcribe_url"
