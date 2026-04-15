@@ -12,7 +12,7 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
 
-_AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".flac", ".ogg")
+_AUDIO_EXTENSIONS = (".mp3", ".m4a", ".wav", ".flac", ".ogg")
 
 _TRANSCRIBE_OPTS = dict(
     model="nova-3-medical",
@@ -75,7 +75,7 @@ tab_record, tab_url, tab_upload = st.tabs(["Record Audio", "Remote URL", "Upload
 with tab_upload:
     uploaded_files = st.file_uploader(
         "Upload audio files",
-        type=["wav", "mp3", "m4a", "flac", "ogg"],
+        type=["mp3", "m4a", "wav", "flac", "ogg"],
         accept_multiple_files=True,
     )
     if st.button(
