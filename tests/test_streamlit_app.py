@@ -219,78 +219,104 @@ class TestProcessUrls:
 
 
 class TestDisplayResponse:
-    def test_offers_transcript_text_download(self, mock_deepgram_cls, mock_st):
+    @staticmethod
+    def _prime_columns(mock_st):
+        """Give mock_st.columns a 3-metric row + 2-download row."""
+        col1, col2, col3 = MagicMock(), MagicMock(), MagicMock()
+        dl_txt, dl_json = MagicMock(), MagicMock()
+        mock_st.columns.side_effect = [(col1, col2, col3), (dl_txt, dl_json)]
+        return col1, col2, col3, dl_txt, dl_json
+
+    def test_wraps_body_in_expander_with_confidence_label(
+        self, mock_deepgram_cls, mock_st
+    ):
         mock_response = (
             mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
         )
-        dl_txt, dl_json = MagicMock(), MagicMock()
-        mock_st.columns.side_effect = [
-            (MagicMock(), MagicMock(), MagicMock(), MagicMock()),
-            (dl_txt, dl_json),
-        ]
+        self._prime_columns(mock_st)
 
-        streamlit_app._display_response("test.wav", mock_response)
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
+
+        mock_st.expander.assert_called_once_with("test.wav  ·  98.0%", expanded=True)
+
+    def test_is_first_false_collapses_expander(self, mock_deepgram_cls, mock_st):
+        mock_response = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
+        )
+        self._prime_columns(mock_st)
+
+        streamlit_app._display_response("b.wav", mock_response, is_first=False)
+
+        mock_st.expander.assert_called_once_with("b.wav  ·  98.0%", expanded=False)
+
+    def test_displays_three_metrics(self, mock_deepgram_cls, mock_st):
+        mock_response = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
+        )
+        col1, col2, col3, _, _ = self._prime_columns(mock_st)
+
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
+
+        col1.metric.assert_called_once_with("Confidence", "98.0%")
+        col2.metric.assert_called_once_with("Duration", "3.5s")
+        col3.metric.assert_called_once_with("Low-confidence words", 2)
+
+    def test_transcript_rendered_with_marks(self, mock_deepgram_cls, mock_st):
+        mock_response = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
+        )
+        self._prime_columns(mock_st)
+
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
+
+        mock_st.markdown.assert_called_once_with(
+            "Life <mark>moves</mark> pretty <mark>fast</mark> really.",
+            unsafe_allow_html=True,
+        )
+
+    def test_does_not_call_st_code(self, mock_deepgram_cls, mock_st):
+        mock_response = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
+        )
+        self._prime_columns(mock_st)
+
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
+
+        mock_st.code.assert_not_called()
+
+    def test_txt_download_is_primary(self, mock_deepgram_cls, mock_st):
+        mock_response = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
+        )
+        _, _, _, dl_txt, _ = self._prime_columns(mock_st)
+
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
 
         dl_txt.download_button.assert_called_once_with(
-            "Download Transcript",
+            "Download .txt",
             data="Life moves pretty fast really.",
             file_name="test.wav.txt",
             mime="text/plain",
+            type="primary",
             key="download_txt_test.wav",
         )
 
-    def test_offers_json_download(self, mock_deepgram_cls, mock_st):
+    def test_json_download_is_tertiary(self, mock_deepgram_cls, mock_st):
         mock_response = (
             mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
         )
-        dl_txt, dl_json = MagicMock(), MagicMock()
-        mock_st.columns.side_effect = [
-            (MagicMock(), MagicMock(), MagicMock(), MagicMock()),
-            (dl_txt, dl_json),
-        ]
+        _, _, _, _, dl_json = self._prime_columns(mock_st)
 
-        streamlit_app._display_response("test.wav", mock_response)
+        streamlit_app._display_response("test.wav", mock_response, is_first=True)
 
         dl_json.download_button.assert_called_once_with(
-            "Download JSON",
+            "JSON",
             data=mock_response.model_dump_json(indent=4),
             file_name="test.wav.json",
             mime="application/json",
+            type="tertiary",
             key="download_json_test.wav",
         )
-
-    def test_displays_transcript_text(self, mock_deepgram_cls, mock_st):
-        mock_response = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
-        )
-        mock_st.columns.side_effect = [
-            (MagicMock(), MagicMock(), MagicMock(), MagicMock()),
-            (MagicMock(), MagicMock()),
-        ]
-
-        streamlit_app._display_response("test.wav", mock_response)
-
-        mock_st.code.assert_called_once_with(
-            "Life moves pretty fast really.", language=None, wrap_lines=True
-        )
-
-    def test_displays_metrics(self, mock_deepgram_cls, mock_st):
-        mock_response = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.return_value
-        )
-        col1, col2, col3, col4 = MagicMock(), MagicMock(), MagicMock(), MagicMock()
-        mock_st.columns.side_effect = [
-            (col1, col2, col3, col4),
-            (MagicMock(), MagicMock()),
-        ]
-
-        streamlit_app._display_response("test.wav", mock_response)
-
-        mock_st.subheader.assert_called_once_with("test.wav")
-        col1.metric.assert_called_once_with("Confidence", "98.0%")
-        col2.metric.assert_called_once_with("Duration", "3.5s")
-        col3.metric.assert_called_once_with("Words", 5)
-        col4.metric.assert_called_once_with("Language", "en")
 
 
 class TestRenderTranscriptHtml:
