@@ -19,7 +19,7 @@ If `DEEPGRAM_API_KEY` is not set, the app prompts for it inline.
 - **URL** — transcribe from HTTP/HTTPS URLs (up to 100 per batch)
 - **Upload** — up to 100 audio files (mp3, m4a, wav, flac, ogg; max 2 GB each)
 
-Transcriptions use smart formatting, numerals conversion, and profanity filtering. Each result displays confidence, duration, word count, and detected language, along with the full transcript. Download results as plain text or JSON.
+Transcriptions use smart formatting, numerals conversion, and profanity filtering. Results appear in collapsible expanders showing confidence, duration, and low-confidence word count. Words below 90% confidence are highlighted in the transcript for review. Download results as plain text or JSON.
 
 ## Sample Audio
 
