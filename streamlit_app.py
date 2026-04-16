@@ -23,6 +23,19 @@ _TRANSCRIBE_OPTS = dict(
     profanity_filter=True,
 )
 
+_LOW_CONF_THRESHOLD = 0.90
+
+
+def _render_transcript_html(words) -> str:
+    """Render Deepgram words as space-joined HTML, wrapping low-confidence words in <mark>."""
+    parts = []
+    for w in words:
+        if w.confidence < _LOW_CONF_THRESHOLD:
+            parts.append(f"<mark>{w.punctuated_word}</mark>")
+        else:
+            parts.append(w.punctuated_word)
+    return " ".join(parts)
+
 
 def _transcribe_batch(
     api_key: str, items: list[tuple[str, dict[str, object]]], method: str

@@ -5,6 +5,13 @@ import streamlit_app
 FAKE_AUDIO = b"fake-audio-data"
 
 
+def _word(text: str, confidence: float):
+    w = MagicMock()
+    w.punctuated_word = text
+    w.confidence = confidence
+    return w
+
+
 class TestParseUrls:
     def test_empty_text_returns_no_urls(self):
         valid, invalid = streamlit_app._parse_urls("")
@@ -284,3 +291,40 @@ class TestDisplayResponse:
         col2.metric.assert_called_once_with("Duration", "3.5s")
         col3.metric.assert_called_once_with("Words", 5)
         col4.metric.assert_called_once_with("Language", "en")
+
+
+class TestRenderTranscriptHtml:
+    def test_empty_list_returns_empty_string(self):
+        assert streamlit_app._render_transcript_html([]) == ""
+
+    def test_all_high_confidence_no_marks(self):
+        words = [_word("Hello", 0.99), _word("world.", 0.97)]
+        html = streamlit_app._render_transcript_html(words)
+        assert "<mark>" not in html
+        assert html == "Hello world."
+
+    def test_all_low_confidence_every_word_wrapped(self):
+        words = [_word("Hello", 0.80), _word("world.", 0.75)]
+        html = streamlit_app._render_transcript_html(words)
+        assert html == "<mark>Hello</mark> <mark>world.</mark>"
+
+    def test_mixed_confidences_only_low_wrapped(self):
+        words = [
+            _word("The", 0.99),
+            _word("patient", 0.85),  # below 0.90
+            _word("presents.", 0.95),
+        ]
+        html = streamlit_app._render_transcript_html(words)
+        assert html == "The <mark>patient</mark> presents."
+
+    def test_threshold_boundary_0_90_not_wrapped(self):
+        # < 0.90 wraps; 0.90 itself does not.
+        words = [_word("borderline", 0.90)]
+        assert streamlit_app._render_transcript_html(words) == "borderline"
+
+    def test_uses_punctuated_word_not_word(self):
+        w = MagicMock()
+        w.punctuated_word = "Doctor,"
+        w.word = "doctor"
+        w.confidence = 0.99
+        assert streamlit_app._render_transcript_html([w]) == "Doctor,"
