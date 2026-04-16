@@ -122,6 +122,12 @@ class TestProcessInputs:
             "Transcription failed for bad.wav: timeout"
         )
 
+    def test_uses_progress_bar_not_spinner(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs("test-key", [("a.wav", b"a"), ("b.wav", b"b")])
+
+        mock_st.progress.assert_called()
+        mock_st.spinner.assert_not_called()
+
 
 class TestProcessUrls:
     def test_creates_single_client_for_batch(self, mock_deepgram_cls, mock_st):
@@ -216,6 +222,15 @@ class TestProcessUrls:
         mock_st.error.assert_called_once_with(
             "Transcription failed for https://example.com/bad.wav: timeout"
         )
+
+    def test_uses_progress_bar_not_spinner(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_urls(
+            "test-key",
+            ["https://example.com/a.wav", "https://example.com/b.wav"],
+        )
+
+        mock_st.progress.assert_called()
+        mock_st.spinner.assert_not_called()
 
 
 class TestRenderTranscriptHtml:

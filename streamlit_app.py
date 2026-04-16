@@ -1,6 +1,7 @@
 import io
 import os
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import streamlit as st
@@ -12,6 +13,7 @@ load_dotenv()
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
+MAX_CONCURRENCY = 5
 
 _AUDIO_EXTENSIONS = (".mp3", ".m4a", ".wav", ".flac", ".ogg")
 _AUDIO_TYPES = [ext.lstrip(".") for ext in _AUDIO_EXTENSIONS]
@@ -40,19 +42,31 @@ def _render_transcript_html(words: list[Any]) -> str:
 def _transcribe_batch(
     api_key: str, items: list[tuple[str, dict[str, object]]], method: str
 ):
-    """Transcribe a batch of audio sources and store results in session state."""
+    """Transcribe a batch of audio sources in parallel; preserve input order in results."""
     client = DeepgramClient(api_key=api_key)
-    responses = []
-    for label, kwargs in items:
-        try:
-            with st.spinner(f"Transcribing {label}..."):
-                transcribe = getattr(client.listen.v1.media, method)
-                resp = transcribe(**kwargs, **_TRANSCRIBE_OPTS)
-                responses.append((label, resp))
-        except Exception as e:
-            st.error(f"Transcription failed for {label}: {e}")
-    if responses:
-        st.session_state["responses"] = responses
+    transcribe = getattr(client.listen.v1.media, method)
+    total = len(items)
+    progress = st.progress(0.0, f"Transcribing 0/{total}...")
+
+    indexed: list[tuple[int, str, Any]] = []
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
+        futures = {
+            executor.submit(transcribe, **kwargs, **_TRANSCRIBE_OPTS): (i, label)
+            for i, (label, kwargs) in enumerate(items)
+        }
+        for done, future in enumerate(as_completed(futures), start=1):
+            i, label = futures[future]
+            progress.progress(done / total, f"Transcribing {done}/{total}...")
+            try:
+                indexed.append((i, label, future.result()))
+            except Exception as e:
+                st.error(f"Transcription failed for {label}: {e}")
+
+    progress.empty()
+
+    if indexed:
+        indexed.sort(key=lambda r: r[0])
+        st.session_state["responses"] = [(label, resp) for _, label, resp in indexed]
 
 
 def _process_inputs(api_key: str, files: list[tuple[str, bytes]]):
