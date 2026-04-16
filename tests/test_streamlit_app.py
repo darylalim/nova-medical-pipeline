@@ -71,10 +71,13 @@ class TestProcessInputs:
     def test_continues_after_single_file_failure(self, mock_deepgram_cls, mock_st):
         mock_client = mock_deepgram_cls.return_value
         good_response = MagicMock()
-        mock_client.listen.v1.media.transcribe_file.side_effect = [
-            Exception("API error"),
-            good_response,
-        ]
+
+        def fake_transcribe(request, **_):
+            if request == b"bad":
+                raise Exception("API error")
+            return good_response
+
+        mock_client.listen.v1.media.transcribe_file.side_effect = fake_transcribe
 
         streamlit_app._process_inputs(
             "test-key", [("bad.wav", b"bad"), ("good.wav", b"good")]
@@ -152,10 +155,13 @@ class TestProcessUrls:
     def test_continues_after_single_url_failure(self, mock_deepgram_cls, mock_st):
         mock_client = mock_deepgram_cls.return_value
         good_response = MagicMock()
-        mock_client.listen.v1.media.transcribe_url.side_effect = [
-            Exception("API error"),
-            good_response,
-        ]
+
+        def fake_transcribe(url, **_):
+            if url == "https://example.com/bad.wav":
+                raise Exception("API error")
+            return good_response
+
+        mock_client.listen.v1.media.transcribe_url.side_effect = fake_transcribe
 
         streamlit_app._process_urls(
             "test-key",
