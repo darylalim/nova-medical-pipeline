@@ -26,10 +26,12 @@ Below the input, a **Features** panel (left) holds the request options, with a *
 - **Language** — English variants (Nova-3 Medical is English-only)
 - **Smart Format** (on by default) — punctuation, paragraph breaks, and entity formatting
 - **Keyterm Prompting** — type specialized vocabulary (drug names, procedures, names), Enter to add each, up to 100, to boost recognition
-- **Profanity Filter** (off by default) — removes profanity from the transcript
-- **Numerals** (off by default) — converts written numbers to digits (e.g. "nine hundred" → "900")
+- **Diarize** (off by default) — labels speaker turns as Speaker 1, Speaker 2, … in the transcript (speakers are numbered, not named by role)
+- **Dictation** (off by default) — turns spoken commands like "period" / "new paragraph" into punctuation (also enables punctuation)
+- **Measurements** (off by default) — abbreviates spoken units (e.g. "five milligrams" → "5 mg")
+- **Redact** (none by default) — replaces selected information with redaction tags. Use **PII** to de-identify (names, locations, IDs); note **PHI** strips clinical content itself (conditions, drugs, injuries)
 
-Once a request completes, the **Transcript** and **JSON** tabs (right) display the response. A single result shows an audio player pinned above the scrollable text; multiple results are labeled and divided per file. (Large uploads — over 25 MB — skip the inline player to limit memory; recordings and URLs always have one.)
+Once a request completes, the **Transcript** and **JSON** tabs (right) display the response. A single result shows an audio player pinned above the scrollable text; multiple results are labeled and divided per file. With **Diarize** on, the transcript is split into `Speaker 1:`, `Speaker 2:`, … lines. (Large uploads — over 25 MB — skip the inline player to limit memory; recordings and URLs always have one.)
 
 ## Sample Audio
 

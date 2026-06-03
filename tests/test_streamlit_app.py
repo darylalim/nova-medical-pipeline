@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import streamlit_app
-from tests.helpers import mock_upload, wav_bytes
+from tests.helpers import mock_upload, mock_word, wav_bytes
 
 FAKE_AUDIO = b"fake-audio-data"
 
@@ -57,8 +57,6 @@ class TestProcessInputs:
             request=FAKE_AUDIO,
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=False,
         )
 
     def test_passes_keyterms_when_provided(self, mock_deepgram_cls, mock_st):
@@ -71,8 +69,6 @@ class TestProcessInputs:
             request=FAKE_AUDIO,
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=False,
             keyterm=["metformin", "aspirin"],
         )
 
@@ -96,8 +92,6 @@ class TestProcessInputs:
             request=FAKE_AUDIO,
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=False,
             language="en-GB",
         )
 
@@ -118,14 +112,12 @@ class TestProcessInputs:
         mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
             request=FAKE_AUDIO,
             model="nova-3-medical",
-            profanity_filter=False,
-            numerals=False,
             smart_format=False,
         )
 
-    def test_enables_profanity_filter_when_on(self, mock_deepgram_cls, mock_st):
+    def test_enables_diarize_when_on(self, mock_deepgram_cls, mock_st):
         streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], profanity_filter=True
+            "test-key", [("test.wav", FAKE_AUDIO)], diarize=True
         )
 
         mock_client = mock_deepgram_cls.return_value
@@ -133,13 +125,12 @@ class TestProcessInputs:
             request=FAKE_AUDIO,
             model="nova-3-medical",
             smart_format=True,
-            numerals=False,
-            profanity_filter=True,
+            diarize=True,
         )
 
-    def test_enables_numerals_when_on(self, mock_deepgram_cls, mock_st):
+    def test_enables_measurements_when_on(self, mock_deepgram_cls, mock_st):
         streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], numerals=True
+            "test-key", [("test.wav", FAKE_AUDIO)], measurements=True
         )
 
         mock_client = mock_deepgram_cls.return_value
@@ -147,9 +138,80 @@ class TestProcessInputs:
             request=FAKE_AUDIO,
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=True,
+            measurements=True,
         )
+
+    def test_dictation_also_enables_punctuate(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs(
+            "test-key", [("test.wav", FAKE_AUDIO)], dictation=True
+        )
+
+        mock_client = mock_deepgram_cls.return_value
+        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
+            request=FAKE_AUDIO,
+            model="nova-3-medical",
+            smart_format=True,
+            dictation=True,
+            punctuate=True,
+        )
+
+    def test_dictation_forces_punctuate_even_when_smart_format_off(
+        self, mock_deepgram_cls, mock_st
+    ):
+        streamlit_app._process_inputs(
+            "test-key", [("test.wav", FAKE_AUDIO)], dictation=True, smart_format=False
+        )
+
+        mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.assert_called_once_with(
+            request=FAKE_AUDIO,
+            model="nova-3-medical",
+            smart_format=False,
+            dictation=True,
+            punctuate=True,
+        )
+
+    def test_omits_off_features_by_default(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
+
+        _, kwargs = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
+        )
+        for absent in ("diarize", "measurements", "dictation", "punctuate", "redact"):
+            assert absent not in kwargs
+        assert "request_options" not in kwargs
+
+    def test_redact_passed_via_request_options(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs(
+            "test-key", [("test.wav", FAKE_AUDIO)], redact=["phi", "pii"]
+        )
+
+        _, kwargs = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
+        )
+        assert kwargs["request_options"] == {
+            "additional_query_parameters": {"redact": ["phi", "pii"]}
+        }
+        assert "redact" not in kwargs  # not a top-level kwarg
+
+    def test_redact_single_group(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs(
+            "test-key", [("test.wav", FAKE_AUDIO)], redact=["phi"]
+        )
+
+        _, kwargs = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
+        )
+        assert kwargs["request_options"] == {
+            "additional_query_parameters": {"redact": ["phi"]}
+        }
+
+    def test_omits_redact_when_empty(self, mock_deepgram_cls, mock_st):
+        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)], redact=[])
+
+        _, kwargs = (
+            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
+        )
+        assert "request_options" not in kwargs
 
     def test_stores_responses_in_session_state(self, mock_deepgram_cls, mock_st):
         streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
@@ -299,8 +361,6 @@ class TestProcessUrls:
             url="https://example.com/test.wav",
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=False,
         )
 
     def test_passes_keyterms_when_provided(self, mock_deepgram_cls, mock_st):
@@ -313,8 +373,6 @@ class TestProcessUrls:
             url="https://example.com/test.wav",
             model="nova-3-medical",
             smart_format=True,
-            profanity_filter=False,
-            numerals=False,
             keyterm=["metformin"],
         )
 
@@ -616,6 +674,119 @@ class TestDisplayTranscript:
 
         mock_st.markdown.assert_called_once_with("take \\*2\\* \\`mg\\` of x\\_y")
 
+    def test_missing_results_renders_no_transcript_notice(self, mock_st):
+        # A callback/async ListenV1AcceptedResponse has only request_id, no results.
+        response = MagicMock(spec=["request_id", "model_dump_json"])
+        response.request_id = "req-123"
+
+        streamlit_app._display_transcript(response)
+
+        mock_st.markdown.assert_not_called()
+        mock_st.caption.assert_called_once_with(streamlit_app.NO_TRANSCRIPT)
+
+    def test_empty_channels_renders_no_transcript_notice(self, mock_st):
+        response = MagicMock()
+        response.results.channels = []
+
+        streamlit_app._display_transcript(response)
+
+        mock_st.markdown.assert_not_called()
+        mock_st.caption.assert_called_once_with(streamlit_app.NO_TRANSCRIPT)
+
+
+class TestDiarizedTranscript:
+    @staticmethod
+    def _response(words):
+        response = MagicMock()
+        response.results.channels = [MagicMock(alternatives=[MagicMock(words=words)])]
+        return response
+
+    def test_groups_consecutive_speaker_runs(self, mock_st):
+        words = [
+            mock_word("Hello", 0.9, speaker=0),
+            mock_word("doctor.", 0.9, speaker=0),
+            mock_word("Hi", 0.9, speaker=1),
+            mock_word("there.", 0.9, speaker=1),
+            mock_word("Yes?", 0.9, speaker=0),
+        ]
+
+        streamlit_app._display_transcript(self._response(words))
+
+        rendered = [c.args[0] for c in mock_st.markdown.call_args_list]
+        assert rendered == [
+            "**Speaker 1:** Hello doctor.",
+            "**Speaker 2:** Hi there.",
+            "**Speaker 1:** Yes?",
+        ]
+        mock_st.caption.assert_not_called()
+
+    def test_single_speaker_renders_one_labeled_line(self, mock_st):
+        words = [mock_word("Note.", 0.9, speaker=0), mock_word("Done.", 0.9, speaker=0)]
+
+        streamlit_app._display_transcript(self._response(words))
+
+        mock_st.markdown.assert_called_once_with("**Speaker 1:** Note. Done.")
+
+    def test_speaker_text_is_markdown_escaped(self, mock_st):
+        words = [mock_word("take *2*", 0.9, speaker=0)]
+
+        streamlit_app._display_transcript(self._response(words))
+
+        mock_st.markdown.assert_called_once_with("**Speaker 1:** take \\*2\\*")
+
+    def test_unlabeled_word_continues_current_run(self, mock_st):
+        # A mid-stream word missing an integer speaker is absorbed into the current
+        # run rather than opening a bogus "Speaker None" segment.
+        words = [
+            mock_word("Patient", 0.9, speaker=0),
+            mock_word("reports", 0.9, speaker=None),
+            mock_word("pain.", 0.9, speaker=0),
+        ]
+
+        streamlit_app._display_transcript(self._response(words))
+
+        mock_st.markdown.assert_called_once_with("**Speaker 1:** Patient reports pain.")
+
+    def test_falls_back_to_word_when_no_punctuated_word(self, mock_st):
+        word = MagicMock()
+        word.punctuated_word = None
+        word.word = "stat"
+        word.speaker = 0
+
+        streamlit_app._display_transcript(self._response([word]))
+
+        mock_st.markdown.assert_called_once_with("**Speaker 1:** stat")
+
+    def test_no_speaker_labels_falls_back_to_flat_transcript(self, mock_st):
+        # Words without integer speakers (diarize off) -> flat transcript path.
+        alt = MagicMock(words=[mock_word("plain words", 0.9)])
+        alt.transcript = "plain words"
+        response = MagicMock()
+        response.results.channels = [MagicMock(alternatives=[alt])]
+
+        streamlit_app._display_transcript(response)
+
+        mock_st.markdown.assert_called_once_with("plain words")
+
+    def test_segments_helper_returns_none_without_speakers(self, mock_st):
+        alt = MagicMock(words=[mock_word("hi", 0.9)])  # speaker=None
+        response = MagicMock()
+        response.results.channels = [MagicMock(alternatives=[alt])]
+
+        assert streamlit_app._diarized_segments(response) is None
+
+    def test_segments_helper_returns_none_for_empty_words(self, mock_st):
+        response = MagicMock()
+        response.results.channels = [MagicMock(alternatives=[MagicMock(words=[])])]
+
+        assert streamlit_app._diarized_segments(response) is None
+
+    def test_segments_helper_returns_none_for_empty_alternatives(self, mock_st):
+        response = MagicMock()
+        response.results.channels = [MagicMock(alternatives=[])]
+
+        assert streamlit_app._diarized_segments(response) is None
+
 
 class TestDisplayJson:
     def test_renders_raw_json(self, mock_deepgram_cls, mock_st):
@@ -639,6 +810,15 @@ class TestDisplayJson:
         mock_st.markdown.assert_not_called()
         mock_st.expander.assert_not_called()
         mock_st.download_button.assert_not_called()
+
+    def test_results_less_response_still_serialized(self, mock_st):
+        # An accepted/callback response (no results) still serializes via model_dump_json.
+        response = MagicMock(spec=["model_dump_json"])
+        response.model_dump_json.return_value = '{"request_id": "req-123"}'
+
+        streamlit_app._display_json(response)
+
+        mock_st.json.assert_called_once_with('{"request_id": "req-123"}')
 
 
 class TestOutputPanel:
@@ -699,8 +879,10 @@ class TestFeatureOpts:
             "keyterms": [],
             "language": "en",
             "smart_format": True,
-            "profanity_filter": False,
-            "numerals": False,
+            "dictation": False,
+            "measurements": False,
+            "diarize": False,
+            "redact": [],
         }
 
     def test_reads_values_from_session_state(self, mock_st):
@@ -709,8 +891,10 @@ class TestFeatureOpts:
                 "keyterms": ["metformin"],
                 "language": "en-GB",
                 "smart_format": False,
-                "profanity_filter": True,
-                "numerals": True,
+                "dictation": True,
+                "measurements": True,
+                "diarize": True,
+                "redact": ["phi", "pii"],
             }
         )
 
@@ -718,17 +902,21 @@ class TestFeatureOpts:
             "keyterms": ["metformin"],
             "language": "en-GB",
             "smart_format": False,
-            "profanity_filter": True,
-            "numerals": True,
+            "dictation": True,
+            "measurements": True,
+            "diarize": True,
+            "redact": ["phi", "pii"],
         }
 
     def test_partial_session_state_mixes_values_and_defaults(self, mock_st):
-        mock_st.session_state.update({"language": "en-GB", "numerals": True})
+        mock_st.session_state.update({"language": "en-GB", "diarize": True})
 
         assert streamlit_app._feature_opts() == {
             "keyterms": [],
             "language": "en-GB",
             "smart_format": True,
-            "profanity_filter": False,
-            "numerals": True,
+            "dictation": False,
+            "measurements": False,
+            "diarize": True,
+            "redact": [],
         }

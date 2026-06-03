@@ -3,10 +3,11 @@ import wave
 from unittest.mock import MagicMock
 
 
-def mock_word(text: str, confidence: float):
+def mock_word(text: str, confidence: float, speaker: int | None = None):
     w = MagicMock()
     w.punctuated_word = text
     w.confidence = confidence
+    w.speaker = speaker
     return w
 
 

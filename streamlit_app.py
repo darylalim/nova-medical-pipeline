@@ -16,7 +16,7 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
 MAX_UPLOADS = 100
 MAX_CONCURRENCY = 5
-MAX_KEYTERMS = 100  # Deepgram keyterm prompting limit
+MAX_KEYTERMS = 100  # client-side cap; Deepgram's real limit is 500 tokens/request
 MAX_PLAYBACK_BYTES = 25 * 1024 * 1024  # larger uploads skip inline playback (memory)
 OUTPUT_HEIGHT = 400  # fixed height (px) of the Transcript/JSON output panel
 
@@ -49,8 +49,19 @@ _LANGUAGES = {
 # Feature defaults — shared by the widgets and _feature_opts so they cannot drift.
 DEFAULT_LANGUAGE = next(iter(_LANGUAGES))
 DEFAULT_SMART_FORMAT = True
-DEFAULT_PROFANITY_FILTER = False
-DEFAULT_NUMERALS = False
+DEFAULT_DICTATION = False
+DEFAULT_MEASUREMENTS = False
+DEFAULT_DIARIZE = False
+
+# Redaction groups offered in the UI (Deepgram `redact` values) -> display labels.
+# PII (de-identification) is listed first; PHI strips clinical content itself, so it
+# is labeled to flag that trade-off in a medical workflow.
+_REDACT_GROUPS = {
+    "pii": "PII — de-identify (names, locations, IDs)",
+    "phi": "PHI — removes clinical content (conditions, drugs, injuries)",
+    "pci": "PCI (card numbers)",
+    "numbers": "Numbers",
+}
 
 # Inline Markdown metacharacters, escaped so transcript text renders literally.
 _MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]~])")
@@ -75,8 +86,10 @@ def _transcribe_batch(
     keyterms: list[str] | None = None,
     language: str | None = None,
     smart_format: bool = DEFAULT_SMART_FORMAT,
-    profanity_filter: bool = DEFAULT_PROFANITY_FILTER,
-    numerals: bool = DEFAULT_NUMERALS,
+    dictation: bool = DEFAULT_DICTATION,
+    measurements: bool = DEFAULT_MEASUREMENTS,
+    diarize: bool = DEFAULT_DIARIZE,
+    redact: list[str] | None = None,
 ):
     """Transcribe a batch of audio sources in parallel; preserve input order in results."""
     client = DeepgramClient(api_key=api_key)
@@ -84,10 +97,19 @@ def _transcribe_batch(
     opts = {
         **_TRANSCRIBE_OPTS,
         "smart_format": smart_format,
-        "profanity_filter": profanity_filter,
-        "numerals": numerals,
+        # Off-by-default features are sent only when enabled (Deepgram defaults them off).
+        **({"diarize": True} if diarize else {}),
+        **({"measurements": True} if measurements else {}),
+        # Dictation requires punctuation, so enable both together.
+        **({"dictation": True, "punctuate": True} if dictation else {}),
         **({"keyterm": keyterms} if keyterms else {}),
         **({"language": language} if language else {}),
+        # `redact` is typed as a single str; pass groups as repeated query params.
+        **(
+            {"request_options": {"additional_query_parameters": {"redact": redact}}}
+            if redact
+            else {}
+        ),
     }
     total = len(items)
     progress = st.progress(0.0, f"Transcribing 0/{total}...")
@@ -145,10 +167,10 @@ def _feature_opts() -> dict[str, Any]:
         "keyterms": st.session_state.get("keyterms", []),
         "language": st.session_state.get("language", DEFAULT_LANGUAGE),
         "smart_format": st.session_state.get("smart_format", DEFAULT_SMART_FORMAT),
-        "profanity_filter": st.session_state.get(
-            "profanity_filter", DEFAULT_PROFANITY_FILTER
-        ),
-        "numerals": st.session_state.get("numerals", DEFAULT_NUMERALS),
+        "dictation": st.session_state.get("dictation", DEFAULT_DICTATION),
+        "measurements": st.session_state.get("measurements", DEFAULT_MEASUREMENTS),
+        "diarize": st.session_state.get("diarize", DEFAULT_DIARIZE),
+        "redact": st.session_state.get("redact", []),
     }
 
 
@@ -224,14 +246,81 @@ def _display_audio(name: str, source: bytes | str) -> None:
         st.audio(source)
 
 
+def _first_alternative(response: Any) -> Any | None:
+    """Return the first channel's first alternative, or None if the response lacks one.
+
+    Pre-recorded calls return a `ListenV1Response` (with `results`); a callback/async
+    call would instead yield a `ListenV1AcceptedResponse` that has only `request_id`
+    and no `results`. Guard that path plus empty channels/alternatives so callers
+    degrade gracefully instead of raising.
+    """
+    results = getattr(response, "results", None)
+    channels = getattr(results, "channels", None) or []
+    if not channels:
+        return None
+    alternatives = getattr(channels[0], "alternatives", None) or []
+    return alternatives[0] if alternatives else None
+
+
+def _transcript_text(response: Any) -> str | None:
+    """Pull the transcript, or None if the response carries no usable results."""
+    alternative = _first_alternative(response)
+    if alternative is None:
+        return None
+    return getattr(alternative, "transcript", None)
+
+
+def _diarized_segments(response: Any) -> list[tuple[Any, str]] | None:
+    """Group words into consecutive (speaker, text) runs when diarization labeled them.
+
+    Returns None when the response has no per-word integer speaker labels (diarize off,
+    or no usable results), so the caller falls back to the flat transcript.
+    """
+    alternative = _first_alternative(response)
+    if alternative is None:
+        return None
+    words = getattr(alternative, "words", None) or []
+    if not words or not isinstance(getattr(words[0], "speaker", None), int):
+        return None
+    segments: list[tuple[Any, list[str]]] = []
+    for word in words:
+        speaker = getattr(word, "speaker", None)
+        token = getattr(word, "punctuated_word", None) or getattr(word, "word", "")
+        # A word whose speaker is missing/non-int (rare mid-stream) continues the
+        # current run instead of opening a bogus "Speaker None" segment; the words[0]
+        # gate guarantees a run already exists by then.
+        new_run = not segments or (
+            isinstance(speaker, int) and speaker != segments[-1][0]
+        )
+        if new_run:
+            segments.append((speaker, [token]))
+        else:
+            segments[-1][1].append(token)
+    return [(speaker, " ".join(tokens)) for speaker, tokens in segments]
+
+
 def _display_transcript(response: Any) -> None:
-    """Render one result's transcript (Markdown-escaped so it shows verbatim)."""
-    transcript = response.results.channels[0].alternatives[0].transcript
+    """Render one result's transcript (Markdown-escaped so it shows verbatim).
+
+    With diarization, render one labeled line per speaker run (1-based, so the first
+    speaker reads "Speaker 1"); otherwise the flat transcript, or a notice when the
+    response carries no usable results.
+    """
+    segments = _diarized_segments(response)
+    if segments:
+        for speaker, text in segments:
+            label = speaker + 1 if isinstance(speaker, int) else speaker
+            st.markdown(f"**Speaker {label}:** {_escape_markdown(text)}")
+        return
+    transcript = _transcript_text(response)
+    if transcript is None:
+        st.caption(NO_TRANSCRIPT)
+        return
     st.markdown(_escape_markdown(transcript))
 
 
 def _display_json(response: Any) -> None:
-    """Render one result's raw JSON."""
+    """Render one result's raw JSON (shape-agnostic; serializes any Pydantic response)."""
     st.json(response.model_dump_json())
 
 
@@ -270,6 +359,7 @@ def _output_panel(
 
 
 PLACEHOLDER = "Select audio above and run your request to see the response here..."
+NO_TRANSCRIPT = "No transcript in this response."
 
 st.title("Nova Medical Pipeline")
 
@@ -330,16 +420,30 @@ with left_col:
             key="keyterms",
         )
         st.toggle(
-            "Profanity Filter",
-            value=DEFAULT_PROFANITY_FILTER,
-            help="Indicates whether to remove profanity from the transcript.",
-            key="profanity_filter",
+            "Diarize",
+            value=DEFAULT_DIARIZE,
+            help="Detects speaker changes and labels turns as Speaker 1, Speaker 2, … in the transcript. Speakers are numbered, not named by role.",
+            key="diarize",
         )
         st.toggle(
-            "Numerals",
-            value=DEFAULT_NUMERALS,
-            help='Converts numbers from written format to numerical format (e.g., "nine hundred" becomes "900").',
-            key="numerals",
+            "Dictation",
+            value=DEFAULT_DICTATION,
+            help='Converts spoken formatting commands into characters (e.g. "period" becomes ".", "new paragraph" starts a new line). Automatically enables punctuation.',
+            key="dictation",
+        )
+        st.toggle(
+            "Measurements",
+            value=DEFAULT_MEASUREMENTS,
+            help='Converts spoken measurements into abbreviated units (e.g. "five milligrams" becomes "5 mg").',
+            key="measurements",
+        )
+        st.multiselect(
+            "Redact",
+            options=list(_REDACT_GROUPS),
+            format_func=lambda group: _REDACT_GROUPS[group],
+            placeholder="Select information to redact...",
+            help="Replaces the selected information with redaction tags in the transcript. For de-identification, use PII (names, locations, IDs). Note: PHI redaction strips clinical content itself (conditions, drugs, injuries) — usually the opposite of what a medical transcript should keep.",
+            key="redact",
         )
         if st.button(
             "Run",
