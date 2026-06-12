@@ -10,17 +10,29 @@ import streamlit as st
 from deepgram import DeepgramClient
 from dotenv import load_dotenv
 
+from nova.config import (
+    AUDIO_EXTENSIONS as _AUDIO_EXTENSIONS,
+    LANGUAGES as _LANGUAGES,
+    REDACT_GROUPS as _REDACT_GROUPS,
+    DEFAULT_LANGUAGE,
+    DEFAULT_SMART_FORMAT,
+    DEFAULT_DICTATION,
+    DEFAULT_MEASUREMENTS,
+    DEFAULT_DIARIZE,
+    MAX_CONCURRENCY,
+    MAX_FILE_SIZE,
+    MAX_KEYTERMS,
+    MAX_UPLOADS,
+    has_audio_extension,
+)
+from nova.transcribe import build_options
+
 load_dotenv()
 
-MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB
 MAX_RECORDING_SECONDS = 10 * 60  # 10 minutes
-MAX_UPLOADS = 100
-MAX_CONCURRENCY = 5
-MAX_KEYTERMS = 100  # client-side cap; Deepgram's real limit is 500 tokens/request
 MAX_PLAYBACK_BYTES = 25 * 1024 * 1024  # larger uploads skip inline playback (memory)
 OUTPUT_HEIGHT = 400  # fixed height (px) of the Transcript/JSON output panel
 
-_AUDIO_EXTENSIONS = (".mp3", ".m4a", ".wav", ".flac", ".ogg")
 _AUDIO_TYPES = [ext.lstrip(".") for ext in _AUDIO_EXTENSIONS]
 _AUDIO_MIME = {
     ".mp3": "audio/mpeg",
@@ -28,39 +40,6 @@ _AUDIO_MIME = {
     ".wav": "audio/wav",
     ".flac": "audio/flac",
     ".ogg": "audio/ogg",
-}
-
-_TRANSCRIBE_OPTS = dict(
-    model="nova-3-medical",
-)
-
-# Nova-3 Medical supports English variants only.
-_LANGUAGES = {
-    "en": "English",
-    "en-US": "English (US)",
-    "en-AU": "English (Australia)",
-    "en-CA": "English (Canada)",
-    "en-GB": "English (UK)",
-    "en-IE": "English (Ireland)",
-    "en-IN": "English (India)",
-    "en-NZ": "English (New Zealand)",
-}
-
-# Feature defaults — shared by the widgets and _feature_opts so they cannot drift.
-DEFAULT_LANGUAGE = next(iter(_LANGUAGES))
-DEFAULT_SMART_FORMAT = True
-DEFAULT_DICTATION = False
-DEFAULT_MEASUREMENTS = False
-DEFAULT_DIARIZE = False
-
-# Redaction groups offered in the UI (Deepgram `redact` values) -> display labels.
-# PII (de-identification) is listed first; PHI strips clinical content itself, so it
-# is labeled to flag that trade-off in a medical workflow.
-_REDACT_GROUPS = {
-    "pii": "PII — de-identify (names, locations, IDs)",
-    "phi": "PHI — removes clinical content (conditions, drugs, injuries)",
-    "pci": "PCI (card numbers)",
-    "numbers": "Numbers",
 }
 
 # Inline Markdown metacharacters, escaped so transcript text renders literally.
@@ -94,23 +73,15 @@ def _transcribe_batch(
     """Transcribe a batch of audio sources in parallel; preserve input order in results."""
     client = DeepgramClient(api_key=api_key)
     transcribe = getattr(client.listen.v1.media, method)
-    opts = {
-        **_TRANSCRIBE_OPTS,
-        "smart_format": smart_format,
-        # Off-by-default features are sent only when enabled (Deepgram defaults them off).
-        **({"diarize": True} if diarize else {}),
-        **({"measurements": True} if measurements else {}),
-        # Dictation requires punctuation, so enable both together.
-        **({"dictation": True, "punctuate": True} if dictation else {}),
-        **({"keyterm": keyterms} if keyterms else {}),
-        **({"language": language} if language else {}),
-        # `redact` is typed as a single str; pass groups as repeated query params.
-        **(
-            {"request_options": {"additional_query_parameters": {"redact": redact}}}
-            if redact
-            else {}
-        ),
-    }
+    opts = build_options(
+        keyterms=keyterms,
+        language=language,
+        smart_format=smart_format,
+        dictation=dictation,
+        measurements=measurements,
+        diarize=diarize,
+        redact=redact,
+    )
     total = len(items)
     progress = st.progress(0.0, f"Transcribing 0/{total}...")
 
@@ -225,11 +196,7 @@ def _run(api_key: str, uploaded_files: list, recording: Any, url_text: str) -> N
         elif len(valid) > MAX_UPLOADS:
             st.error(f"Too many URLs. Maximum is {MAX_UPLOADS} per batch.")
         else:
-            no_ext = [
-                u
-                for u in valid
-                if not u.split("?")[0].lower().endswith(_AUDIO_EXTENSIONS)
-            ]
+            no_ext = [u for u in valid if not has_audio_extension(u)]
             if no_ext:
                 st.warning(
                     f"Unrecognized audio extension (supported: {', '.join(_AUDIO_TYPES)}): {', '.join(no_ext)}"
