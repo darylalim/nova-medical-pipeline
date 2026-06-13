@@ -5,6 +5,12 @@ from tests.helpers import mock_upload, mock_word, wav_bytes
 
 FAKE_AUDIO = b"fake-audio-data"
 
+# Option building (build_options) and the batch runner (transcribe_batch) are tested
+# directly in tests/test_transcribe.py; the response walkers in tests/test_results.py.
+# This module covers only the Streamlit-side behavior: the _transcribe_batch wrapper's
+# progress / error / session-state handling, _run validation, _feature_opts, and the
+# renderers.
+
 
 class TestParseUrls:
     def test_empty_text_returns_no_urls(self):
@@ -42,176 +48,9 @@ class TestParseUrls:
 
 
 class TestProcessInputs:
-    def test_creates_single_client_for_batch(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs("test-key", [("a.wav", b"a"), ("b.wav", b"b")])
-
-        mock_deepgram_cls.assert_called_once_with(api_key="test-key")
-        mock_client = mock_deepgram_cls.return_value
-        assert mock_client.listen.v1.media.transcribe_file.call_count == 2
-
-    def test_passes_correct_transcribe_options(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-        )
-
-    def test_passes_keyterms_when_provided(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], keyterms=["metformin", "aspirin"]
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-            keyterm=["metformin", "aspirin"],
-        )
-
-    def test_omits_keyterm_when_empty(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], keyterms=[]
-        )
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        assert "keyterm" not in kwargs
-
-    def test_passes_language_when_provided(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], language="en-GB"
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-            language="en-GB",
-        )
-
-    def test_omits_language_when_none(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        assert "language" not in kwargs
-
-    def test_disables_smart_format_when_off(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], smart_format=False
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=False,
-        )
-
-    def test_enables_diarize_when_on(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], diarize=True
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-            diarize=True,
-        )
-
-    def test_enables_measurements_when_on(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], measurements=True
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-            measurements=True,
-        )
-
-    def test_dictation_also_enables_punctuate(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], dictation=True
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=True,
-            dictation=True,
-            punctuate=True,
-        )
-
-    def test_dictation_forces_punctuate_even_when_smart_format_off(
-        self, mock_deepgram_cls, mock_st
-    ):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], dictation=True, smart_format=False
-        )
-
-        mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.assert_called_once_with(
-            request=FAKE_AUDIO,
-            model="nova-3-medical",
-            smart_format=False,
-            dictation=True,
-            punctuate=True,
-        )
-
-    def test_omits_off_features_by_default(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        for absent in ("diarize", "measurements", "dictation", "punctuate", "redact"):
-            assert absent not in kwargs
-        assert "request_options" not in kwargs
-
-    def test_redact_passed_via_request_options(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], redact=["phi", "pii"]
-        )
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        assert kwargs["request_options"] == {
-            "additional_query_parameters": {"redact": ["phi", "pii"]}
-        }
-        assert "redact" not in kwargs  # not a top-level kwarg
-
-    def test_redact_single_group(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs(
-            "test-key", [("test.wav", FAKE_AUDIO)], redact=["phi"]
-        )
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        assert kwargs["request_options"] == {
-            "additional_query_parameters": {"redact": ["phi"]}
-        }
-
-    def test_omits_redact_when_empty(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)], redact=[])
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_file.call_args
-        )
-        assert "request_options" not in kwargs
+    """The _transcribe_batch wrapper (via _process_inputs): session state, playback
+    sources, progress, and per-item error rendering. Option pass-through and batch
+    mechanics live in test_transcribe.py."""
 
     def test_stores_responses_in_session_state(self, mock_deepgram_cls, mock_st):
         streamlit_app._process_inputs("test-key", [("test.wav", FAKE_AUDIO)])
@@ -344,57 +183,7 @@ class TestProcessInputs:
 
 
 class TestProcessUrls:
-    def test_creates_single_client_for_batch(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls(
-            "test-key", ["https://example.com/a.wav", "https://example.com/b.wav"]
-        )
-
-        mock_deepgram_cls.assert_called_once_with(api_key="test-key")
-        mock_client = mock_deepgram_cls.return_value
-        assert mock_client.listen.v1.media.transcribe_url.call_count == 2
-
-    def test_passes_correct_transcribe_options(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls("test-key", ["https://example.com/test.wav"])
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_url.assert_called_once_with(
-            url="https://example.com/test.wav",
-            model="nova-3-medical",
-            smart_format=True,
-        )
-
-    def test_passes_keyterms_when_provided(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls(
-            "test-key", ["https://example.com/test.wav"], keyterms=["metformin"]
-        )
-
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_url.assert_called_once_with(
-            url="https://example.com/test.wav",
-            model="nova-3-medical",
-            smart_format=True,
-            keyterm=["metformin"],
-        )
-
-    def test_omits_keyterm_when_empty(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls(
-            "test-key", ["https://example.com/test.wav"], keyterms=[]
-        )
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_url.call_args
-        )
-        assert "keyterm" not in kwargs
-
-    def test_passes_language_when_provided(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls(
-            "test-key", ["https://example.com/test.wav"], language="en-GB"
-        )
-
-        _, kwargs = (
-            mock_deepgram_cls.return_value.listen.v1.media.transcribe_url.call_args
-        )
-        assert kwargs["language"] == "en-GB"
+    """URL-specific wrapper behavior: labels and playback sources are the URLs."""
 
     def test_stores_responses_in_session_state(self, mock_deepgram_cls, mock_st):
         streamlit_app._process_urls("test-key", ["https://example.com/test.wav"])
@@ -403,7 +192,7 @@ class TestProcessUrls:
         assert len(responses) == 1
         assert responses[0][0] == "https://example.com/test.wav"
 
-    def test_stores_audio_sources_in_session_state(self, mock_deepgram_cls, mock_st):
+    def test_stores_audio_sources_as_urls(self, mock_deepgram_cls, mock_st):
         urls = ["https://example.com/a.wav", "https://example.com/b.wav"]
         streamlit_app._process_urls("test-key", urls)
 
@@ -434,49 +223,6 @@ class TestProcessUrls:
         assert mock_st.session_state["audio_sources"] == [
             "https://example.com/good.wav"
         ]
-
-    def test_all_urls_failing_clears_session_state(self, mock_deepgram_cls, mock_st):
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_url.side_effect = Exception("fail")
-
-        streamlit_app._process_urls(
-            "test-key",
-            ["https://example.com/a.wav", "https://example.com/b.wav"],
-        )
-
-        assert mock_st.error.call_count == 2
-        assert mock_st.session_state["responses"] == []
-        assert mock_st.session_state["audio_sources"] == []
-
-    def test_stores_all_successful_responses(self, mock_deepgram_cls, mock_st):
-        urls = [
-            "https://example.com/a.wav",
-            "https://example.com/b.wav",
-            "https://example.com/c.wav",
-        ]
-        streamlit_app._process_urls("test-key", urls)
-
-        responses = mock_st.session_state["responses"]
-        assert [name for name, _ in responses] == urls
-
-    def test_error_message_includes_url_and_exception(self, mock_deepgram_cls, mock_st):
-        mock_client = mock_deepgram_cls.return_value
-        mock_client.listen.v1.media.transcribe_url.side_effect = Exception("timeout")
-
-        streamlit_app._process_urls("test-key", ["https://example.com/bad.wav"])
-
-        mock_st.error.assert_called_once_with(
-            "Transcription failed for https://example.com/bad.wav: timeout"
-        )
-
-    def test_uses_progress_bar_not_spinner(self, mock_deepgram_cls, mock_st):
-        streamlit_app._process_urls(
-            "test-key",
-            ["https://example.com/a.wav", "https://example.com/b.wav"],
-        )
-
-        mock_st.progress.assert_called()
-        mock_st.spinner.assert_not_called()
 
 
 class TestRun:
@@ -695,6 +441,9 @@ class TestDisplayTranscript:
 
 
 class TestDiarizedTranscript:
+    """Diarized rendering via _display_transcript — speaker labels are 1-based for display
+    (the core's diarized_segments stays 0-based; that is tested in test_results.py)."""
+
     @staticmethod
     def _response(words):
         response = MagicMock()
@@ -767,25 +516,6 @@ class TestDiarizedTranscript:
         streamlit_app._display_transcript(response)
 
         mock_st.markdown.assert_called_once_with("plain words")
-
-    def test_segments_helper_returns_none_without_speakers(self, mock_st):
-        alt = MagicMock(words=[mock_word("hi", 0.9)])  # speaker=None
-        response = MagicMock()
-        response.results.channels = [MagicMock(alternatives=[alt])]
-
-        assert streamlit_app._diarized_segments(response) is None
-
-    def test_segments_helper_returns_none_for_empty_words(self, mock_st):
-        response = MagicMock()
-        response.results.channels = [MagicMock(alternatives=[MagicMock(words=[])])]
-
-        assert streamlit_app._diarized_segments(response) is None
-
-    def test_segments_helper_returns_none_for_empty_alternatives(self, mock_st):
-        response = MagicMock()
-        response.results.channels = [MagicMock(alternatives=[])]
-
-        assert streamlit_app._diarized_segments(response) is None
 
 
 class TestDisplayJson:
