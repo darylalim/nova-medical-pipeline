@@ -197,6 +197,26 @@ class TestTranscribeBatch:
             )
         assert sorted(calls) == [(1, 2), (2, 2)]
 
+    def test_on_progress_counts_failed_items(self):
+        # The "fires on success OR failure" guarantee: progress still ticks for the
+        # failed item (on_progress runs before future.result()).
+        def dispatch(request, **_):
+            if request == b"bad":
+                raise Exception("API error")
+            return "ok"
+
+        calls: list[tuple[int, int]] = []
+        with patch("nova.transcribe.DeepgramClient") as cls:
+            cls.return_value.listen.v1.media.transcribe_file.side_effect = dispatch
+            transcribe_batch(
+                "k",
+                _files(("bad.wav", b"bad"), ("good.wav", b"good")),
+                "transcribe_file",
+                options=OPTS,
+                on_progress=lambda done, total: calls.append((done, total)),
+            )
+        assert sorted(calls) == [(1, 2), (2, 2)]
+
     def test_gate_entered_per_item_without_leaking_into_kwargs(self):
         class Gate:
             def __init__(self) -> None:

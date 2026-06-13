@@ -65,31 +65,18 @@ def _transcribe_batch(
     api_key: str,
     items: list[tuple[str, dict[str, Any]]],
     method: str,
-    keyterms: list[str] | None = None,
-    language: str | None = None,
-    smart_format: bool = DEFAULT_SMART_FORMAT,
-    dictation: bool = DEFAULT_DICTATION,
-    measurements: bool = DEFAULT_MEASUREMENTS,
-    diarize: bool = DEFAULT_DIARIZE,
-    redact: list[str] | None = None,
+    **opts: Any,
 ):
     """Transcribe a batch via the shared core, owning the Streamlit-side concerns.
 
     Thin UI adapter over `nova.transcribe.transcribe_batch`: it builds the playback
     sources up front, drives the progress bar through `on_progress`, renders one
-    `st.error` per failed item, and writes results to session state. The module-global
+    `st.error` per failed item, and writes results to session state. `**opts` is the
+    `_feature_opts` dict (its keys match `build_options` exactly); the module-global
     `DeepgramClient`/`as_completed` are passed as seams so the existing test patch
     points keep intercepting them.
     """
-    opts = build_options(
-        keyterms=keyterms,
-        language=language,
-        smart_format=smart_format,
-        dictation=dictation,
-        measurements=measurements,
-        diarize=diarize,
-        redact=redact,
-    )
+    options = build_options(**opts)
     total = len(items)
     progress = st.progress(0.0, f"Transcribing 0/{total}...")
     sources = {
@@ -104,7 +91,7 @@ def _transcribe_batch(
         api_key,
         items,
         method,
-        options=opts,
+        options=options,
         client_cls=DeepgramClient,
         as_completed_fn=as_completed,
         on_progress=_on_progress,

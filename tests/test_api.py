@@ -1,5 +1,6 @@
 import asyncio
 import io
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -99,6 +100,26 @@ class TestHealthAndAuth:
     def test_auth_failure_never_calls_deepgram(self, client, mock_dg):
         client.post("/v1/transcriptions/urls", json={"urls": [URL]})
         _media(mock_dg).transcribe_url.assert_not_called()
+
+
+class TestRoutingErrors:
+    """Routing-level StarletteHTTPExceptions wear the project envelope, not FastAPI's
+    default {"detail": ...}."""
+
+    def test_unknown_path_is_404_envelope(self, client):
+        resp = client.get("/nope")
+        assert resp.status_code == 404
+        err = resp.json()["error"]
+        assert err["type"] == "not_found"
+        assert err["code"] == "not_found"
+        assert err["request_id"]
+        assert resp.headers["X-Request-ID"]
+
+    def test_wrong_method_is_405_envelope(self, client):
+        resp = client.get("/v1/transcriptions/urls", headers=AUTH)
+        assert resp.status_code == 405
+        assert resp.json()["error"]["code"] == "method_not_allowed"
+        assert "POST" in resp.headers["Allow"]  # exc.headers passed through
 
 
 class TestOptionPassthroughUrls:
@@ -230,6 +251,27 @@ class TestBatchSemantics:
         err = resp.json()["results"][0]["error"]
         assert err["type"] == "upstream_timeout"
         assert err["code"] == "deepgram_timeout"
+
+    def test_global_semaphore_acquired_per_item(self, client, mock_dg, monkeypatch):
+        # The process-global spend gate is wired into the endpoint path (the real
+        # transcribe_batch runs here against the mocked client) and entered once per item.
+        class _Spy:
+            def __init__(self):
+                self.lock = threading.Lock()
+                self.entered = 0
+
+            def __enter__(self):
+                with self.lock:
+                    self.entered += 1
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+        spy = _Spy()
+        monkeypatch.setattr(main, "GLOBAL_SEMAPHORE", spy)
+        _post_urls(client, urls=["https://e.com/a.mp3", "https://e.com/b.mp3"])
+        assert spy.entered == 2
 
     def test_segments_are_zero_based(self, client, mock_dg):
         words = [mock_word("Hi", 0.9, speaker=0), mock_word("There", 0.9, speaker=1)]

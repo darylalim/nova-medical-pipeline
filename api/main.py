@@ -53,6 +53,15 @@ GLOBAL_SEMAPHORE = threading.BoundedSemaphore(settings.global_max_concurrency())
 # Chunk size for the capped streamed read of multipart uploads.
 _READ_CHUNK = 1024 * 1024
 
+# (status, type, code, message) for an over-budget request body — emitted from both the
+# Content-Length precheck (as an _envelope) and the streamed read (as an ApiError).
+_TOO_LARGE = (
+    413,
+    "payload_too_large",
+    "request_body_too_large",
+    "Request body exceeds the configured limit; use URL batches for bulk audio.",
+)
+
 # Pydantic error `type`s that are already machine-readable envelope codes.
 _DOMAIN_CODES = frozenset(
     {
@@ -135,13 +144,7 @@ async def _context(
         except ValueError:
             too_big = False
         if too_big:
-            return _envelope(
-                413,
-                "payload_too_large",
-                "request_body_too_large",
-                "Request body exceeds the configured limit; use URL batches for bulk audio.",
-                request_id,
-            )
+            return _envelope(*_TOO_LARGE, request_id)
 
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
@@ -231,9 +234,7 @@ async def transcribe_urls(body: UrlBatchRequest) -> BatchResponse:
         if not has_audio_extension(url)
     ]
     sendable = [(i, url, {"url": url}) for i, url in enumerate(body.urls)]
-    return await _run_batch(
-        api_key, sendable, {}, "transcribe_url", body, len(body.urls), warnings
-    )
+    return await _run_batch(api_key, sendable, {}, "transcribe_url", body, warnings)
 
 
 @router.post("/transcriptions/files", response_model=BatchResponse)
@@ -296,9 +297,7 @@ async def transcribe_files(
         else:
             sendable.append((i, name, {"request": data}))
 
-    return await _run_batch(
-        api_key, sendable, errors, "transcribe_file", opts, len(files), []
-    )
+    return await _run_batch(api_key, sendable, errors, "transcribe_file", opts, [])
 
 
 def _require_key() -> str:
@@ -328,12 +327,7 @@ async def _read_capped(upload: UploadFile, budget_left: int) -> bytes:
             break
         read += len(chunk)
         if read > budget_left:
-            raise ApiError(
-                413,
-                "payload_too_large",
-                "request_body_too_large",
-                "Request body exceeds the configured limit; use URL batches for bulk audio.",
-            )
+            raise ApiError(*_TOO_LARGE)
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -373,7 +367,6 @@ async def _run_batch(
     errors: dict[int, ItemOut],
     method: str,
     opts: TranscriptionOptions,
-    total: int,
     warnings: list[str],
 ) -> BatchResponse:
     options = build_options(
@@ -396,6 +389,9 @@ async def _run_batch(
         original_index, name, _ = sendable[result.index]
         by_index[original_index] = _item_out(original_index, name, result, opts)
 
+    # sendable and errors partition all input items by original index, so their sizes
+    # sum to the batch total; rebuild the ordered list over that contiguous range.
+    total = len(sendable) + len(errors)
     ordered = [by_index[i] for i in range(total)]
     failed = sum(1 for item in ordered if item.status == "error")
     succeeded = total - failed
