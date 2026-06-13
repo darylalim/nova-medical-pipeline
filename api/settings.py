@@ -23,6 +23,22 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _REQUEST_HEADROOM = 16 * 1024 * 1024
 
 
+def _int_env(name: str, default: int) -> int:
+    """Parse an integer env var, turning a typo into a clear config error.
+
+    A bare `int(...)` would otherwise raise an opaque `ValueError` — surfaced as a
+    scrubbed 500 for the per-request vars, or an import-time crash for the semaphore
+    sizing (before the fail-closed startup check can give a friendly message).
+    """
+    raw = os.environ.get(name)
+    if not raw:  # unset or empty -> default
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be an integer, got {raw!r}") from None
+
+
 def deepgram_api_key() -> str:
     return os.environ.get("DEEPGRAM_API_KEY", "")
 
@@ -42,15 +58,13 @@ def is_loopback() -> bool:
 
 
 def max_request_bytes() -> int:
-    return int(
-        os.environ.get("MAX_REQUEST_BYTES", str(MAX_FILE_SIZE + _REQUEST_HEADROOM))
-    )
+    return _int_env("MAX_REQUEST_BYTES", MAX_FILE_SIZE + _REQUEST_HEADROOM)
 
 
 def deepgram_timeout_seconds() -> int:
     """Upstream per-call timeout; mainly reclaims semaphore slots from hung calls."""
-    return int(os.environ.get("DEEPGRAM_TIMEOUT_SECONDS", "600"))
+    return _int_env("DEEPGRAM_TIMEOUT_SECONDS", 600)
 
 
 def global_max_concurrency() -> int:
-    return int(os.environ.get("GLOBAL_MAX_CONCURRENCY", str(MAX_CONCURRENCY)))
+    return _int_env("GLOBAL_MAX_CONCURRENCY", MAX_CONCURRENCY)

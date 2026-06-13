@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from fastapi.testclient import TestClient
 
 import api.main as main
+from api import settings
 from tests.helpers import mock_word
 
 AUTH = {"Authorization": "Bearer secret-token"}
@@ -449,3 +450,20 @@ class TestLifespan:
         monkeypatch.setenv("API_AUTH_TOKENS", "tok")
         with TestClient(main.app):  # startup must not raise
             pass
+
+
+class TestSettings:
+    def test_int_env_parses_value(self, monkeypatch):
+        monkeypatch.setenv("MAX_REQUEST_BYTES", "1234")
+        assert settings.max_request_bytes() == 1234
+
+    def test_int_env_defaults_when_unset(self, monkeypatch):
+        monkeypatch.delenv("DEEPGRAM_TIMEOUT_SECONDS", raising=False)
+        assert settings.deepgram_timeout_seconds() == 600
+
+    def test_int_env_rejects_malformed_with_named_error(self, monkeypatch):
+        monkeypatch.setenv("GLOBAL_MAX_CONCURRENCY", "oops")
+        with pytest.raises(
+            RuntimeError, match="GLOBAL_MAX_CONCURRENCY must be an integer"
+        ):
+            settings.global_max_concurrency()
