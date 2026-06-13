@@ -1,13 +1,18 @@
 # Nova Medical Pipeline
 
-Transcribe audio files with the Deepgram Nova-3 Medical model.
+Transcribe medical audio with the Deepgram Nova-3 Medical model — through a **Streamlit UI** or a **FastAPI service**, both built on a shared, framework-free core (`nova/`) so they never drift.
 
 ## Setup
 
 1. Install dependencies: `uv sync`
-2. (Optional) Create `.env` at project root with `DEEPGRAM_API_KEY=your-key-here` so the app can use it automatically (otherwise it prompts inline at startup)
+2. Create your env file: `cp .env.example .env`, then set:
+   - `DEEPGRAM_API_KEY` — your Deepgram key (both front-ends; the UI also prompts inline if unset)
+   - `API_AUTH_TOKENS` — required only for the API; comma-separated bearer tokens. Generate one with:
+     ```bash
+     python -c "import secrets; print(secrets.token_urlsafe(32))"
+     ```
 
-## Usage
+## Streamlit UI
 
 ```bash
 uv run streamlit run streamlit_app.py
@@ -33,6 +38,37 @@ Below the input, a **Features** panel (left) holds the request options, with a *
 
 Once a request completes, the **Transcript** and **JSON** tabs (right) display the response. A single result shows an audio player pinned above the scrollable text; multiple results are labeled and divided per file. With **Diarize** on, the transcript is split into `Speaker 1:`, `Speaker 2:`, … lines. (Large uploads — over 25 MB — skip the inline player to limit memory; recordings and URLs always have one.)
 
+## API
+
+```bash
+uv run uvicorn api.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+All `/v1` routes require a bearer token from `API_AUTH_TOKENS`. On a loopback bind, interactive docs are served at `/docs`; binding a non-loopback host requires `API_AUTH_TOKENS` (the server refuses to start otherwise) and disables the docs.
+
+| Method & path | Body | Purpose |
+|---|---|---|
+| `GET /healthz` | — | Liveness (no auth, never calls Deepgram) |
+| `POST /v1/transcriptions/urls` | JSON | Transcribe 1–100 remote audio URLs |
+| `POST /v1/transcriptions/files` | multipart | Transcribe 1–100 uploaded files |
+
+```bash
+curl -X POST localhost:8000/v1/transcriptions/urls \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example.com/visit.mp3"], "diarize": true, "keyterms": ["metformin"]}'
+```
+
+Both endpoints accept the same feature options as the UI (`smart_format`, `diarize`, `dictation`, `measurements`, `keyterms`, `language`, `redact`) plus `include_words` / `include_raw`; the model is pinned server-side. The response is `200` whenever the batch ran — each item carries its own `status`, `transcript`, `segments` (0-based speakers), and optional `words`/`raw`, so one failure never fails the batch. Requests are **synchronous**: set generous client read timeouts (minutes per GB) and prefer several smaller batches over one large multipart upload (URL batches are the sanctioned bulk path).
+
+## Architecture
+
+- **`nova/`** — the shared core (no Streamlit/FastAPI imports): `config` (constants), `transcribe` (`build_options` + `transcribe_batch`), `results` (response walkers). Speakers are Deepgram's native 0-based integers here.
+- **`streamlit_app.py`** — the Streamlit UI; a thin adapter over `nova/` that adds widgets, session state, and the renderers (which display speakers 1-based).
+- **`api/`** — the FastAPI service; bearer auth, fail-fast validation, per-item isolation, a process-wide concurrency gate, and PHI-safe logging.
+
+See `docs/plans/2026-06-12-fastapi-service-design.md` for the full design.
+
 ## Sample Audio
 
 Medical dictation practice files from [NCH Software](https://www.nch.com.au/scribe/practice.html):
@@ -44,7 +80,9 @@ Medical dictation practice files from [NCH Software](https://www.nch.com.au/scri
 ## Testing
 
 ```bash
-uv run pytest
+uv run pytest        # tests
+uv run ruff check .  # lint
+uv run ty check .    # type check
 ```
 
-Tests mock the Deepgram API — no real API calls are made. Covers input validation, batch processing, error handling, and session state management.
+Tests mock the Deepgram client — no real API calls. The core is tested directly (`tests/test_transcribe.py`, `tests/test_results.py`), the Streamlit adapter in `tests/test_streamlit_app.py`, and the service in `tests/test_api.py` (auth, option pass-through, batch isolation, validation, size limits, and the error envelope).

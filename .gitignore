@@ -1,5 +1,6 @@
-# Env
+# Env (.env.example is the tracked template; .env holds real secrets)
 .env
+!.env.example
 .venv/
 
 # Caches
